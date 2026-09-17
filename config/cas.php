@@ -3,14 +3,17 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | CAS Server Hostname
+    | CAS Server Base URL
     |--------------------------------------------------------------------------
     |
-    | Nama domain dari CAS server (tanpa https:// atau path /cas).
-    | Contoh: sso.undiksha.ac.id
+    | URL dasar CAS server, termasuk path jika diperlukan.
+    | Contoh: https://sso.example.com/cas
     |
     */
-    'hostname' => env('CAS_HOSTNAME', 'sso.undiksha.ac.id'),
+    'base_url' => env('CAS_BASE_URL'),
+
+    // Backward-compatible fallback for existing installations.
+    'hostname' => env('CAS_HOSTNAME', 'sso.example.com'),
 
     /*
     |--------------------------------------------------------------------------

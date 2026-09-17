@@ -16,11 +16,13 @@ class CasService implements CasServiceInterface
 
     public function __construct()
     {
-        $host = config('cas.hostname', 'sso.undiksha.ac.id');
-        $uri  = '/cas';
+        $baseUrl = config('cas.base_url');
+        if (!$baseUrl) {
+            $host = config('cas.hostname', 'sso.example.com');
+            $baseUrl = "https://{$host}/cas";
+        }
 
-        // Base URL: https://sso.undiksha.ac.id/cas
-        $this->baseUrl = "https://{$host}" . rtrim($uri, '/');
+        $this->baseUrl = rtrim($baseUrl, '/');
 
         // Logout URL
         $this->logoutUrl = config('cas.logout_url') ?: "{$this->baseUrl}/logout";
@@ -82,7 +84,7 @@ class CasService implements CasServiceInterface
 
             if (!$response->successful()) {
                 Log::error('CAS validation HTTP failed: ' . $response->status(), [
-                    'body' => $response->body()
+                    'endpoint' => $endpoint,
                 ]);
                 return null;
             }
@@ -103,48 +105,69 @@ class CasService implements CasServiceInterface
      */
     protected function parseCasResponse(string $xmlString): ?array
     {
-        // Parse XML dengan libxml error capture, tanpa @ suppressor
-        libxml_use_internal_errors(true);
-        $xml = simplexml_load_string($xmlString, 'SimpleXMLElement', 0, 'cas', true);
+        $previousErrorMode = libxml_use_internal_errors(true);
 
-        if ($xml === false) {
-            // Fallback tanpa namespace
-            $xml = simplexml_load_string($xmlString);
+        try {
+            $xml = simplexml_load_string(
+                $xmlString,
+                'SimpleXMLElement',
+                LIBXML_NONET,
+                'cas',
+                true
+            );
+
             if ($xml === false) {
-                $errors = array_map(fn($e) => trim($e->message), libxml_get_errors());
-                libxml_clear_errors();
+                $xml = simplexml_load_string($xmlString, 'SimpleXMLElement', LIBXML_NONET);
+            }
+
+            if ($xml === false) {
+                $errors = array_map(fn($error) => trim($error->message), libxml_get_errors());
                 Log::error('CAS parse error: XML tidak valid', [
                     'libxml_errors' => $errors,
-                    'raw_preview'   => substr($xmlString, 0, 300),
                 ]);
                 return null;
             }
-        }
-        libxml_clear_errors();
 
-        // Jika Autentikasi Berhasil
-        if (isset($xml->authenticationSuccess)) {
-            $user = (string) $xml->authenticationSuccess->user;
-            $attributes = [];
+            $response = $xml->children('cas', true);
+            $success = $response->authenticationSuccess;
 
-            // Ambil atribut tambahan jika CAS server mengirimkannya (CAS 3.0 / SAML)
-            if (isset($xml->authenticationSuccess->attributes)) {
-                foreach ($xml->authenticationSuccess->attributes->children('cas', true) as $key => $value) {
-                    $attributes[$key] = (string) $value;
-                }
+            if (!isset($success)) {
+                $success = $xml->authenticationSuccess;
             }
 
-            return [
-                'user' => $user, // Email atau username pengguna
-                'attributes' => $attributes,
-            ];
-        }
+            if (isset($success)) {
+                $successData = $success->children('cas', true);
+                $user = trim((string) ($successData->user ?: $success->user));
+                $attributes = [];
+                $attributesNode = $successData->attributes;
 
-        // Jika Tiket Invalid / Expired
-        if (isset($xml->authenticationFailure)) {
-            Log::warning('CAS Auth Failed: ' . (string) $xml->authenticationFailure);
-        }
+                if (isset($attributesNode)) {
+                    foreach ($attributesNode->children('cas', true) as $key => $value) {
+                        $attributes[$key] = (string) $value;
+                    }
+                }
 
-        return null;
+                return $user === '' ? null : [
+                    'user' => $user,
+                    'attributes' => $attributes,
+                ];
+            }
+
+            $failure = $response->authenticationFailure;
+            if (!isset($failure)) {
+                $failure = $xml->authenticationFailure;
+            }
+
+            if (isset($failure)) {
+                Log::warning('CAS authentication failed.', [
+                    'code' => (string) $failure['code'],
+                ]);
+            }
+
+            return null;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousErrorMode);
+        }
     }
 }

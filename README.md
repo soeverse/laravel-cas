@@ -1,48 +1,55 @@
 # Soeverse Laravel CAS
 
-Package otentikasi CAS native dan mandiri untuk ekosistem aplikasi Undiksha, dibuat spesifik agar stabil, ringan, dan tidak bergantung pada package usang.
+A lightweight native CAS authentication package for Laravel with no dependency on outdated packages.
 
-## Instalasi
+Supports Laravel 9 through 13 and PHP 8.0 or later.
 
-Tambahkan package ini ke proyek Laravel Anda melalui Composer\_:
+## Installation
+
+Install this package in your Laravel application using Composer:
 
 ```bash
 composer require soeverse/laravel-cas
 ```
 
-### Konfigurasi
+### Configuration
 
-Publish file konfigurasi agar Anda bisa menyesuaikan pengaturan:
+Publish the configuration file so you can customize the package settings:
 
 ```bash
 php artisan vendor:publish --tag="cas-config"
 ```
 
-Perintah di atas akan menyalin file konfigurasi ke `config/cas.php`. Pastikan Anda menambahkan environment variables berikut di file `.env` Anda:
+The command above copies the configuration file to `config/cas.php`. Add the following environment variables to your `.env` file:
 
-````env
-CAS_HOSTNAME=sso.undiksha.ac.id
+```env
+CAS_BASE_URL=https://sso.example.com/cas
 CAS_VERSION=2.0
-CAS_LOGOUT_URL=https://sso.undiksha.ac.id/cas/logout
+CAS_LOGOUT_URL=https://sso.example.com/cas/logout
 CAS_SSL_VERIFY=true
 CAS_TIMEOUT=10
-## Penggunaan Secara Rigid (Praktik Terbaik)
+CAS_CONNECT_TIMEOUT=3
+```
 
-Untuk menggunakan package ini secara optimal, Anda perlu memahami bagaimana siklus autentikasi CAS bekerja:
+`CAS_HOSTNAME` remains supported for existing installations, but `CAS_BASE_URL` is recommended for new installations.
 
-### Siklus Autentikasi CAS (Alur Implementasi)
+## Usage
 
-1. **Akses Endpoint Login (Lokal)**: Pengguna mengakses URL login aplikasi Anda (misal: `/sso/login`).
-2. **Redirect ke CAS Server**: `CasService` mengecek apakah ada query parameter `?ticket=`. Jika tidak ada, `CasService` akan mengarahkan (redirect) pengguna ke halaman login terpusat SSO (CAS Server).
-3. **Autentikasi di SSO**: Pengguna memasukkan *username* dan *password* di halaman SSO. Jika berhasil, CAS Server akan mengarahkan pengguna **kembali** ke URL login aplikasi Anda, namun kali ini dengan membawa *Service Ticket* di URL (misal: `/sso/login?ticket=ST-12345...`).
-4. **Validasi Tiket**: Aplikasi Anda mendeteksi adanya `?ticket=`. Controller kemudian menggunakan `CasService` untuk melakukan *HTTP request* (server-to-server) ke CAS Server untuk memvalidasi tiket tersebut.
-5. **Pembuatan Sesi (Lokal)**: Jika tiket valid, CAS Server akan merespon dengan data *user* (email). Aplikasi lokal Anda kemudian bertugas mencocokkan email tersebut ke database lokal (`users`) dan membuat sesi login Laravel (via `Auth::login()`).
+To use this package effectively, it helps to understand the CAS authentication flow:
 
-Berikut adalah implementasi dari siklus di atas:
+### CAS Authentication Flow
 
-### 1. Daftarkan Route
+1. **Access the local login endpoint**: The user visits your application login URL, such as `/sso/login`.
+2. **Redirect to the CAS server**: `CasService` checks for the `?ticket=` query parameter. If it is missing, `CasService` redirects the user to the central CAS login page.
+3. **Authenticate with SSO**: The user enters their _username_ and _password_ on the SSO page. After successful authentication, the CAS server redirects the user back to your application login URL with a _Service Ticket_, such as `/sso/login?ticket=ST-12345...`.
+4. **Validate the ticket**: Your application detects the `?ticket=` parameter. The controller uses `CasService` to validate the ticket with a server-to-server _HTTP request_ to the CAS server.
+5. **Create the local session**: If the ticket is valid, the CAS server returns user data, such as an email address. Your application then matches the email against the local `users` database table and creates a Laravel session using `Auth::login()`.
 
-Pada file `routes/web.php`, buat route untuk login dan logout:
+The following example implements this flow:
+
+### 1. Register the Routes
+
+In `routes/web.php`, define routes for login and logout:
 
 ```php
 use App\Http\Controllers\AuthController;
@@ -50,11 +57,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/sso/login', [AuthController::class, 'ssoLogin'])->name('sso.login');
 Route::post('/sso/logout', [AuthController::class, 'ssoLogout'])->name('sso.logout');
-````
+```
 
-### 2. Implementasi Controller
+### 2. Implement the Controller
 
-Berikut adalah contoh komprehensif implementasi `AuthController.php` menggunakan Dependency Injection:
+The following is a complete `AuthController.php` example using dependency injection:
 
 ```php
 <?php
@@ -69,74 +76,74 @@ use App\Models\User;
 class AuthController extends Controller
 {
     /**
-     * Handle proses Login SSO.
+     * Handle the SSO login flow.
      */
     public function ssoLogin(Request $request, CasServiceInterface $cas)
     {
-        // 1. Tentukan URL callback (URL route ini sendiri)
+        // 1. Determine the callback URL (this route's URL)
         $serviceUrl = route('sso.login');
 
-        // 2. Jika tidak ada tiket (belum login di CAS Server), redirect ke CAS
+        // 2. If there is no ticket, redirect to the CAS server
         if (!$request->has('ticket')) {
             return redirect()->away($cas->getLoginUrl($serviceUrl));
         }
 
-        // 3. Jika ada tiket, lakukan validasi ke CAS Server
+        // 3. Validate the ticket with the CAS server
         $ticket = $request->query('ticket');
         $authData = $cas->validateTicket($ticket, $serviceUrl);
 
-        // 4. Handle kegagalan validasi tiket
+        // 4. Handle ticket validation failure
         if (!$authData || empty($authData['user'])) {
             return redirect()->route('login')->with('error', 'Tiket SSO tidak valid atau sudah kedaluwarsa.');
         }
 
-        // 5. Normalisasi email/username untuk keamanan (mencegah spasi berlebih)
+        // 5. Normalize the email or username
         $email = strtolower(trim($authData['user']));
 
-        // 6. Cari user di database lokal berdasarkan email
+        // 6. Find the user in the local database by email
         $user = User::where('email', $email)->first();
 
         if (!$user) {
             return redirect()->route('login')->with('error', "Akun dengan email {$email} tidak ditemukan di sistem lokal.");
         }
 
-        // 7. Login pengguna secara lokal (Laravel Session)
+        // 7. Log the user into the local Laravel session
         Auth::login($user);
 
-        // Tambahan: Menyimpan flag bahwa user login melalui CAS (jika diperlukan untuk proses logout)
+        // Optional: Store a flag indicating that the user logged in through CAS
         $request->session()->put('is_native_cas', true);
 
-        // 8. Redirect ke halaman dashboard lokal
+        // 8. Redirect to the local dashboard
         return redirect()->intended('/dashboard');
     }
 
     /**
-     * Handle proses Logout SSO.
+     * Handle the SSO logout flow.
      */
     public function ssoLogout(Request $request, CasServiceInterface $cas)
     {
         $isNativeCas = $request->session()->get('is_native_cas', false);
 
-        // 1. Hapus sesi lokal Laravel
+        // 1. Clear the local Laravel session
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        // 2. Jika user sebelumnya login menggunakan SSO CAS, redirect ke CAS Logout
+        // 2. If the user logged in through CAS, redirect to CAS logout
         if ($isNativeCas) {
-            // Setelah logout dari CAS, arahkan kembali ke halaman utama aplikasi
+            // Return to the application homepage after CAS logout
             return redirect()->away($cas->getLogoutUrl(url('/')));
         }
 
-        // 3. Jika login non-SSO, langsung kembali ke beranda lokal
+        // 3. For non-SSO users, return directly to the local homepage
         return redirect('/');
     }
 }
 ```
 
-### 3. Pemanggilan via Facade (Opsional)
+### 3. Use the Facade (Optional)
 
-Jika Anda lebih menyukai gaya pemanggilan statis ala Laravel, Anda juga dapat menggunakan Facade `Cas`:
+If you prefer Laravel-style static calls, you can also use the `Cas` facade:
 
 ```php
 use Soeverse\Cas\Facades\Cas;
@@ -155,19 +162,32 @@ public function checkSsoUrl()
 
 ### `getLoginUrl(string $serviceUrl): string`
 
-Menghasilkan URL lengkap untuk mengarahkan pengguna ke halaman login SSO.
+Generates the complete URL for redirecting users to the SSO login page.
 
-- `$serviceUrl` adalah URL callback aplikasi Anda setelah proses autentikasi berhasil (tempat CAS akan melempar parameter `?ticket=...`).
+- `$serviceUrl` is your application callback URL after authentication succeeds. The CAS server redirects to this URL with a `?ticket=...` parameter.
 
 ### `validateTicket(string $ticket, string $serviceUrl): ?array`
 
-Melakukan _server-to-server validation_ ke CAS Server menggunakan HTTP Client.
+Validates a ticket with the CAS server using a server-to-server HTTP request.
 
-- Mengembalikan _array_ berisi kunci `user` (email) dan `attributes` jika validasi sukses.
-- Mengembalikan `null` jika validasi gagal atau format tiket tidak dikenali.
+- Returns an _array_ containing the `user` and `attributes` keys when validation succeeds.
+- Returns `null` when validation fails or the ticket format is not recognized.
 
 ### `getLogoutUrl(?string $serviceUrl = null): string`
 
-Menghasilkan URL lengkap untuk mengarahkan pengguna ke halaman logout SSO.
+Generates the complete URL for redirecting users to the SSO logout page.
 
-- Jika `$serviceUrl` diberikan, CAS akan diarahkan kembali ke URL tersebut setelah logout berhasil (opsional).
+- If `$serviceUrl` is provided, the CAS server redirects to that URL after logout (optional).
+
+## Testing
+
+Install the development dependencies and run the test suite:
+
+```bash
+composer install
+composer test
+```
+
+## License
+
+This package is released under the [MIT License](LICENSE).
