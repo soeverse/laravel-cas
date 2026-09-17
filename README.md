@@ -1,5 +1,9 @@
 # Soeverse Laravel CAS
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/soeverse/laravel-cas.svg)](https://packagist.org/packages/soeverse/laravel-cas)
+[![Total Downloads](https://img.shields.io/packagist/dt/soeverse/laravel-cas.svg)](https://packagist.org/packages/soeverse/laravel-cas)
+[![Tests](https://github.com/soeverse/laravel-cas/actions/workflows/tests.yml/badge.svg)](https://github.com/soeverse/laravel-cas/actions/workflows/tests.yml)
+
 A lightweight native CAS authentication package for Laravel with no dependency on outdated packages.
 
 Supports Laravel 9 through 13 and PHP 8.0 or later.
