@@ -131,19 +131,23 @@ class CasService implements CasServiceInterface
             $response = $xml->children('cas', true);
             $success = $response->authenticationSuccess;
 
-            if (!isset($success)) {
+            if (count($success) === 0) {
                 $success = $xml->authenticationSuccess;
             }
 
-            if (isset($success)) {
+            if (count($success) > 0) {
                 $successData = $success->children('cas', true);
-                $user = trim((string) ($successData->user ?: $success->user));
+                $user = trim((string) ($successData?->user ?: $success->user));
                 $attributes = [];
-                $attributesNode = $successData->attributes;
+                $attributesNode = $successData?->attributes;
 
-                if (isset($attributesNode)) {
-                    foreach ($attributesNode->children('cas', true) as $key => $value) {
-                        $attributes[$key] = (string) $value;
+                if ($attributesNode !== null && count($attributesNode) > 0) {
+                    $attributeNodes = $attributesNode->children('cas', true);
+
+                    if ($attributeNodes !== null) {
+                        foreach ($attributeNodes as $key => $value) {
+                            $attributes[$key] = (string) $value;
+                        }
                     }
                 }
 
@@ -154,11 +158,11 @@ class CasService implements CasServiceInterface
             }
 
             $failure = $response->authenticationFailure;
-            if (!isset($failure)) {
+            if (count($failure) === 0) {
                 $failure = $xml->authenticationFailure;
             }
 
-            if (isset($failure)) {
+            if (count($failure) > 0) {
                 Log::warning('CAS authentication failed.', [
                     'code' => (string) $failure['code'],
                 ]);

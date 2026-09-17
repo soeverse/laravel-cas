@@ -58,6 +58,47 @@ class CasServiceTest extends TestCase
         self::assertSame(['role' => 'admin'], $result['attributes']);
     }
 
+    public function test_it_parses_success_response_without_attributes(): void
+    {
+        Http::fake([
+            'cas.example.test/*' => Http::response(<<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+                    <cas:authenticationSuccess>
+                        <cas:user>user@example.com</cas:user>
+                    </cas:authenticationSuccess>
+                </cas:serviceResponse>
+                XML, 200),
+        ]);
+
+        $result = $this->app->make(CasServiceInterface::class)
+            ->validateTicket('ST-123456-ticket', 'https://app.example.test/sso/login');
+
+        self::assertSame([
+            'user' => 'user@example.com',
+            'attributes' => [],
+        ], $result);
+    }
+
+    public function test_it_returns_null_for_authentication_failure(): void
+    {
+        Http::fake([
+            'cas.example.test/*' => Http::response(<<<'XML'
+                <?xml version="1.0" encoding="UTF-8"?>
+                <cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+                    <cas:authenticationFailure code="INVALID_TICKET">
+                        Ticket is invalid
+                    </cas:authenticationFailure>
+                </cas:serviceResponse>
+                XML, 200),
+        ]);
+
+        $result = $this->app->make(CasServiceInterface::class)
+            ->validateTicket('ST-123456-ticket', 'https://app.example.test/sso/login');
+
+        self::assertNull($result);
+    }
+
     public function test_it_rejects_invalid_ticket_without_requesting_cas(): void
     {
         Http::fake();
