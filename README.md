@@ -4,7 +4,7 @@ Package otentikasi CAS native dan mandiri untuk ekosistem aplikasi Undiksha, dib
 
 ## Instalasi
 
-Tambahkan package ini ke proyek Laravel Anda melalui Composer:
+Tambahkan package ini ke proyek Laravel Anda melalui Composer\_:
 
 ```bash
 composer require soeverse/laravel-cas
