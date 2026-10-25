@@ -6,7 +6,7 @@
 
 A lightweight native CAS authentication package for Laravel with no dependency on outdated packages.
 
-Supports Laravel 9 through 13 and PHP 8.0 or later.
+Supports Laravel 9 through 13 and PHP 8.1 or later.
 
 ## Installation
 
@@ -161,6 +161,45 @@ public function checkSsoUrl()
 }
 // ...
 ```
+
+## Separated Frontend and Backend
+
+This package can also be used when the frontend and Laravel backend are deployed separately. The Laravel backend must own the CAS callback because the service ticket is validated server-to-server with the CAS server.
+
+The recommended flow is:
+
+1. The frontend sends the user to a backend endpoint such as `/auth/cas/login`.
+2. The backend redirects the user to CAS using `getLoginUrl()`.
+3. CAS redirects back to a backend callback such as `/auth/cas/callback?ticket=...`.
+4. The backend validates the ticket using `validateTicket()` and finds or creates the local user.
+5. The backend authenticates the frontend using Laravel Sanctum, Passport, or another application-specific token/session mechanism.
+6. The backend redirects the user to the frontend application.
+
+Example backend routes:
+
+```php
+Route::get('/auth/cas/login', function (CasServiceInterface $cas) {
+    $callbackUrl = config('app.url') . '/auth/cas/callback';
+
+    return redirect()->away($cas->getLoginUrl($callbackUrl));
+});
+
+Route::get('/auth/cas/callback', function (Request $request, CasServiceInterface $cas) {
+    $callbackUrl = config('app.url') . '/auth/cas/callback';
+    $authData = $cas->validateTicket($request->query('ticket'), $callbackUrl);
+
+    if (!$authData || empty($authData['user'])) {
+        abort(401, 'Invalid CAS ticket.');
+    }
+
+    // Find or create the local user, then issue an application token
+    // or establish the session used by the separated frontend.
+
+    return redirect()->away('https://frontend.example.com/auth/success');
+});
+```
+
+The package does not issue API tokens, configure CORS, or manage frontend sessions. Those concerns belong to the Laravel application. Do not send the CAS service ticket to the frontend or place long-lived access tokens in redirect URLs. For unrelated domains, use a short-lived, single-use authorization code and exchange it through the backend for an access token. For subdomains under the same parent domain, a secure, correctly configured cookie-based session may also be used.
 
 ## API Reference
 
