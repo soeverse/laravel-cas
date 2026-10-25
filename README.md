@@ -6,7 +6,7 @@
 
 A lightweight native CAS authentication package for Laravel with no dependency on outdated packages.
 
-Supports Laravel 9 through 13 and PHP 8.1 or later.
+Supports Laravel 9 through 13 and PHP 8.2 or later.
 
 ## Installation
 
